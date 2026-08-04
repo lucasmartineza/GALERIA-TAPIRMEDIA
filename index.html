@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Tapir Media — Galería</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#131313">
+<style>
+  :root{
+    --bg:#131313;
+    --card:#1c1b1b;
+    --border:#3a3939;
+    --cyan:#00e5ff;
+    --cyan-dim:rgba(0,229,255,.15);
+    --text:#eaeaea;
+    --text-muted:#8a8a86;
+    --danger:#e24b4a;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    min-height:100vh;
+  }
+  .screen{ max-width:480px; margin:0 auto; padding:20px 16px 90px; min-height:100vh; }
+  .hidden{ display:none !important; }
+
+  /* LOGIN */
+  .logo{ color:var(--cyan); font-size:20px; font-weight:600; letter-spacing:2px; text-align:center;
+         text-shadow:0 0 12px rgba(0,229,255,.35); margin:60px 0 40px; }
+  input{
+    width:100%; padding:14px; margin-bottom:12px; background:var(--card);
+    border:0.5px solid var(--border); border-radius:8px; color:var(--text); font-size:15px;
+  }
+  input:focus{ outline:none; border-color:var(--cyan); }
+  button{
+    width:100%; padding:14px; background:var(--cyan); color:#062a2e; border:none;
+    border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  button:disabled{ opacity:.5; cursor:default; }
+  .msg{ font-size:13px; color:var(--danger); margin-top:8px; text-align:center; }
+  .opciones button{ background:var(--card); color:var(--text); border:0.5px solid var(--border);
+                     margin-bottom:8px; text-align:left; }
+
+  /* GALERIA */
+  .top{ display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .top .brand{ color:var(--cyan); font-size:14px; font-weight:600; letter-spacing:1px; }
+  .cliente{ margin:12px 0 16px; }
+  .cliente .nombre{ font-size:15px; font-weight:600; margin:0 0 2px; }
+  .cliente .evento{ font-size:12px; color:var(--text-muted); margin:0; }
+
+  .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:90px; }
+  .thumb{ position:relative; aspect-ratio:1; background:var(--card); border-radius:8px;
+          border:0.5px solid var(--border); overflow:hidden; cursor:pointer; }
+  .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .badge-nueva{ position:absolute; top:4px; left:4px; background:var(--cyan-dim); color:var(--cyan);
+                font-size:9px; font-weight:600; padding:2px 5px; border-radius:4px;
+                border:0.5px solid rgba(0,229,255,.4); }
+  .badge-video{ position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,.6); color:#fff;
+                font-size:10px; padding:2px 5px; border-radius:4px; }
+
+  .barra-inferior{ position:fixed; bottom:0; left:0; right:0; padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+                    background:linear-gradient(to top, var(--bg) 70%, transparent); }
+  .barra-inferior button{ max-width:480px; margin:0 auto; display:flex; align-items:center;
+                           justify-content:center; gap:8px; box-shadow:0 0 12px rgba(0,229,255,.3); }
+
+  /* PREVIEW */
+  .preview{ position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:50;
+            display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+  .preview img, .preview video{ max-width:100%; max-height:75vh; border-radius:8px; }
+  .preview .acciones{ display:flex; gap:12px; margin-top:16px; width:100%; max-width:400px; }
+  .preview .acciones button{ flex:1; }
+  .preview .cerrar{ position:absolute; top:16px; right:16px; background:none; border:none;
+                     color:#fff; font-size:22px; width:auto; padding:8px; }
+
+  .empty{ text-align:center; color:var(--text-muted); font-size:13px; margin-top:60px; }
+</style>
+</head>
+<body>
+
+<!-- PANTALLA LOGIN -->
+<div id="pantallaLogin" class="screen">
+  <div class="logo">TAPIR MEDIA</div>
+  <input id="inNombre" placeholder="Nombre" autocomplete="given-name">
+  <input id="inApellido" placeholder="Apellido" autocomplete="family-name">
+  <button id="btnLogin">Entrar</button>
+  <div id="loginMsg" class="msg"></div>
+  <div id="opciones" class="opciones" style="margin-top:16px;"></div>
+</div>
+
+<!-- PANTALLA GALERIA -->
+<div id="pantallaGaleria" class="screen hidden">
+  <div class="top">
+    <span class="brand">TAPIR MEDIA</span>
+  </div>
+  <div class="cliente">
+    <p class="nombre" id="clienteNombre"></p>
+    <p class="evento" id="clienteEvento"></p>
+  </div>
+  <div id="grid" class="grid"></div>
+  <div id="vacio" class="empty hidden">Todavía no hay material cargado. Volvé a chequear más tarde.</div>
+  <div class="barra-inferior">
+    <button id="btnDescargarTodo">Descargar todo</button>
+  </div>
+</div>
+
+<!-- PREVIEW -->
+<div id="preview" class="preview hidden">
+  <button class="cerrar" id="btnCerrarPreview">&times;</button>
+  <div id="previewMedia"></div>
+  <div class="acciones">
+    <button id="btnDescargarUno">Descargar</button>
+  </div>
+</div>
+
+<script>
+// ================== CONFIG ==================
+var CONFIG = {
+  API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
+};
+
+// ================== ESTADO ==================
+var estado = {
+  cliente: null,
+  archivos: [],
+  archivoActual: null
+};
+
+// ================== LOGIN ==================
+document.getElementById('btnLogin').addEventListener('click', hacerLogin);
+
+function hacerLogin() {
+  var nombre = document.getElementById('inNombre').value.trim();
+  var apellido = document.getElementById('inApellido').value.trim();
+  var msg = document.getElementById('loginMsg');
+  msg.textContent = '';
+
+  if (!nombre || !apellido) {
+    msg.textContent = 'Completá nombre y apellido.';
+    return;
+  }
+
+  var url = CONFIG.API_URL + '?action=login&nombre=' + encodeURIComponent(nombre) +
+            '&apellido=' + encodeURIComponent(apellido);
+
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.status === 'ok') {
+      entrarGaleria(data.cliente);
+    } else if (data.status === 'multiple') {
+      mostrarOpciones(data.opciones);
+    } else {
+      msg.textContent = 'No encontramos tu carpeta. Revisá cómo lo escribiste.';
+    }
+  }).catch(function () {
+    msg.textContent = 'No pudimos conectar. Probá de nuevo en un momento.';
+  });
+}
+
+function mostrarOpciones(opciones) {
+  var cont = document.getElementById('opciones');
+  cont.innerHTML = '';
+  opciones.forEach(function (o) {
+    var b = document.createElement('button');
+    b.textContent = 'Auto #' + o.numero_auto + ' · ' + o.evento;
+    b.addEventListener('click', function () { entrarGaleria(o); });
+    cont.appendChild(b);
+  });
+}
+
+function entrarGaleria(cliente) {
+  estado.cliente = cliente;
+  localStorage.setItem('tapir_cliente', JSON.stringify(cliente));
+  document.getElementById('pantallaLogin').classList.add('hidden');
+  document.getElementById('pantallaGaleria').classList.remove('hidden');
+  document.getElementById('clienteNombre').textContent = cliente.nombre + ' ' + cliente.apellido;
+  document.getElementById('clienteEvento').textContent = cliente.evento || '';
+  cargarArchivos();
+}
+
+// ================== GALERIA ==================
+function cargarArchivos() {
+  var url = CONFIG.API_URL + '?action=files&folder=' + encodeURIComponent(estado.cliente.folder_id);
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.status !== 'ok') return;
+    estado.archivos = data.archivos;
+    renderGrid();
+  });
+}
+
+function claveVisita() {
+  return 'tapir_ultima_visita_' + estado.cliente.folder_id;
+}
+
+function renderGrid() {
+  var grid = document.getElementById('grid');
+  var vacio = document.getElementById('vacio');
+  grid.innerHTML = '';
+
+  if (estado.archivos.length === 0) {
+    vacio.classList.remove('hidden');
+    return;
+  }
+  vacio.classList.add('hidden');
+
+  var ultimaVisita = parseInt(localStorage.getItem(claveVisita()) || '0', 10);
+
+  estado.archivos.forEach(function (a) {
+    var div = document.createElement('div');
+    div.className = 'thumb';
+
+    var img = document.createElement('img');
+    img.src = a.thumbnailUrl;
+    img.loading = 'lazy';
+    div.appendChild(img);
+
+    if (a.fechaCreacion > ultimaVisita) {
+      var badge = document.createElement('span');
+      badge.className = 'badge-nueva';
+      badge.textContent = 'nueva';
+      div.appendChild(badge);
+    }
+    if (a.esVideo) {
+      var bv = document.createElement('span');
+      bv.className = 'badge-video';
+      bv.textContent = 'video';
+      div.appendChild(bv);
+    }
+
+    div.addEventListener('click', function () { abrirPreview(a); });
+    grid.appendChild(div);
+  });
+
+  // marcamos la visita DESPUES de pintar, asi el usuario alcanza a ver que era nuevo
+  localStorage.setItem(claveVisita(), String(Date.now()));
+}
+
+// ================== PREVIEW ==================
+function abrirPreview(archivo) {
+  estado.archivoActual = archivo;
+  var cont = document.getElementById('previewMedia');
+  cont.innerHTML = '';
+  if (archivo.esVideo) {
+    var v = document.createElement('video');
+    v.src = archivo.viewUrl;
+    v.controls = true;
+    v.autoplay = true;
+    cont.appendChild(v);
+  } else {
+    var img = document.createElement('img');
+    img.src = archivo.viewUrl;
+    cont.appendChild(img);
+  }
+  document.getElementById('preview').classList.remove('hidden');
+}
+
+document.getElementById('btnCerrarPreview').addEventListener('click', function () {
+  document.getElementById('preview').classList.add('hidden');
+});
+
+document.getElementById('btnDescargarUno').addEventListener('click', function () {
+  if (estado.archivoActual) window.location.href = estado.archivoActual.downloadUrl;
+});
+
+// ================== DESCARGA TOTAL ==================
+document.getElementById('btnDescargarTodo').addEventListener('click', function () {
+  var btn = this;
+  btn.textContent = 'Armando el paquete...';
+  btn.disabled = true;
+  var url = CONFIG.API_URL + '?action=zip&folder=' + encodeURIComponent(estado.cliente.folder_id);
+  window.location.href = url;
+  setTimeout(function () {
+    btn.textContent = 'Descargar todo';
+    btn.disabled = false;
+  }, 4000);
+});
+
+// ================== RECORDAR SESION ==================
+(function () {
+  var guardado = localStorage.getItem('tapir_cliente');
+  if (guardado) entrarGaleria(JSON.parse(guardado));
+})();
+</script>
+</body>
+</html>
