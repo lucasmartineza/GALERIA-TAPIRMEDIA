@@ -275,6 +275,8 @@ function renderGrid() {
 
   var ultimaVisita = parseInt(localStorage.getItem(claveVisita()) || '0', 10);
 
+  var colaCarga = [];
+
   estado.archivos.forEach(function (a) {
     var div = document.createElement('div');
     div.className = 'thumb';
@@ -284,12 +286,7 @@ function renderGrid() {
     div.appendChild(skeleton);
 
     var img = document.createElement('img');
-    img.src = a.thumbnailUrl;
-    img.loading = 'lazy';
-    img.addEventListener('load', function () {
-      this.classList.add('cargada');
-      this.previousElementSibling.classList.add('oculto');
-    });
+    img.dataset.src = a.thumbnailUrl;
     div.appendChild(img);
 
     if (a.fechaCreacion > ultimaVisita) {
@@ -333,10 +330,32 @@ function renderGrid() {
 
     div.addEventListener('click', function () { abrirPreview(a); });
     grid.appendChild(div);
+    colaCarga.push(img);
   });
 
   // marcamos la visita DESPUES de pintar, asi el usuario alcanza a ver que era nuevo
   localStorage.setItem(claveVisita(), String(Date.now()));
+
+  procesarCola(colaCarga);
+}
+
+function procesarCola(cola) {
+  var CONCURRENCIA = 2; // cuantas miniaturas bajan en simultaneo
+  var indice = 0;
+
+  function siguiente() {
+    if (indice >= cola.length) return;
+    var img = cola[indice++];
+    img.src = img.dataset.src;
+    img.addEventListener('load', function () {
+      this.classList.add('cargada');
+      this.previousElementSibling.classList.add('oculto');
+      siguiente();
+    });
+    img.addEventListener('error', siguiente);
+  }
+
+  for (var i = 0; i < CONCURRENCIA; i++) siguiente();
 }
 
 // ================== PREVIEW ==================
