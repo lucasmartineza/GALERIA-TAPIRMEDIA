@@ -52,6 +52,16 @@
                     border-radius:4px; font-size:10px; font-weight:600; padding:2px 6px;
                     box-shadow:none; }
   .etiqueta-tramo::before{ display:none; }
+  .marker-icono{ background:#131313; border:2px solid #00e5ff; border-radius:50%;
+                  width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+                  box-shadow:0 0 10px rgba(0,229,255,.5); }
+  .marker-icono svg{ width:16px; height:16px; stroke:#00e5ff; }
+  .marker-icono.ambos svg{ width:13px; height:13px; }
+  .marca-item{ cursor:pointer; }
+  .marca-item .marker-icono{ width:28px; height:28px; flex-shrink:0; }
+  .marca-item .marker-icono svg{ width:14px; height:14px; }
+  .leaflet-popup-content-wrapper{ background:#1c1b1b; color:#eaeaea; border-radius:8px; }
+  .leaflet-popup-tip{ background:#1c1b1b; }
 </style>
 </head>
 <body>
@@ -238,6 +248,19 @@ document.getElementById('btnEnviar').addEventListener('click', function () {
 });
 
 // --- Listado + borrado de marcas ---
+var ICONO_CAMARA_FOTO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+var ICONO_CAMARA_VIDEO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+function iconoParaTipo(tipo) {
+  if (tipo === 'video') return ICONO_CAMARA_VIDEO;
+  if (tipo === 'ambos') return ICONO_CAMARA_FOTO + ICONO_CAMARA_VIDEO;
+  return ICONO_CAMARA_FOTO;
+}
+function etiquetaParaTipo(tipo) {
+  if (tipo === 'video') return 'Video';
+  if (tipo === 'ambos') return 'Foto y Video';
+  return 'Foto';
+}
+
 function cargarMarcas() {
   var evento = document.getElementById('inEvento').value.trim();
   if (capaMarcas) { mapaAdmin.removeLayer(capaMarcas); capaMarcas = null; }
@@ -252,21 +275,47 @@ function cargarMarcas() {
       return;
     }
     var marcadores = [];
+    var marcadoresPorId = {};
     data.ubicaciones.forEach(function (u) {
-      var etiqueta = u.tipo === 'ambos' ? 'Foto y Video' : (u.tipo === 'video' ? 'Video' : 'Foto');
+      var etiqueta = etiquetaParaTipo(u.tipo);
+
+      var icono = L.divIcon({
+        className: '',
+        html: '<div class="marker-icono' + (u.tipo === 'ambos' ? ' ambos' : '') + '">' + iconoParaTipo(u.tipo) + '</div>',
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      var marker = L.marker([u.lat, u.lng], { icon: icono });
+      marker.bindPopup(etiqueta + (u.descripcion ? ' — ' + u.descripcion : '') + '<br><small>' + u.fecha + '</small>');
+      marcadores.push(marker);
+      marcadoresPorId[u.id] = marker;
+
       var div = document.createElement('div');
       div.className = 'marca-item';
+
+      var iconoDiv = document.createElement('div');
+      iconoDiv.className = 'marker-icono' + (u.tipo === 'ambos' ? ' ambos' : '');
+      iconoDiv.innerHTML = iconoParaTipo(u.tipo);
+      div.appendChild(iconoDiv);
+
       var info = document.createElement('div');
       info.className = 'info';
+      info.style.flex = '1';
       info.innerHTML = '<span class="tag">' + etiqueta + '</span> · ' + u.fecha +
                         (u.descripcion ? '<br>' + u.descripcion : '');
       div.appendChild(info);
+
       var btn = document.createElement('button');
       btn.textContent = 'Quitar';
-      btn.addEventListener('click', function () { quitarMarca(u.id); });
+      btn.addEventListener('click', function (ev) { ev.stopPropagation(); quitarMarca(u.id); });
       div.appendChild(btn);
+
+      div.addEventListener('click', function () {
+        mapaAdmin.setView([u.lat, u.lng], 16, { animate: true });
+        setTimeout(function () { marker.openPopup(); }, 400);
+      });
+
       cont.appendChild(div);
-      marcadores.push(L.marker([u.lat, u.lng]));
     });
     if (marcadores.length) capaMarcas = L.layerGroup(marcadores).addTo(mapaAdmin);
   });
