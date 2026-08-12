@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v14 -->
+<!-- GALERIA TAPIR — v15 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -7,6 +7,8 @@
 <title>Tapir Media — Galería</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#131313">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
@@ -253,7 +255,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v14';
+var APP_VERSION = 'v15';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -760,6 +762,13 @@ function renderListaPuntos(ubicaciones, marcadoresPorId) {
   var guardado = localStorage.getItem('tapir_cliente');
   if (guardado) entrarGaleria(JSON.parse(guardado));
 })();
+
+// ================== SERVICE WORKER (instalable) ==================
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>
