@@ -46,6 +46,9 @@
   <button id="btnEnviar">Publicar aviso</button>
   <div id="msg" class="msg"></div>
 
+  <p style="font-size:12px;color:#8a8a86;margin:24px 0 8px;">Mensajes publicados</p>
+  <div id="listaAvisos"></div>
+
   <hr class="separador">
 
   <h2>Marcar ubicación</h2>
@@ -116,6 +119,7 @@ document.getElementById('btnEnviar').addEventListener('click', function () {
       msg.textContent = 'Aviso publicado. Ya está visible para todos.';
       msg.className = 'msg ok';
       document.getElementById('inMensaje').value = '';
+      cargarAvisosAdmin();
     } else {
       msg.textContent = data.error || 'No se pudo publicar.';
       msg.className = 'msg err';
@@ -127,6 +131,43 @@ document.getElementById('btnEnviar').addEventListener('click', function () {
     msg.className = 'msg err';
   });
 });
+
+function cargarAvisosAdmin() {
+  var url = API_URL + '?action=avisos';
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var cont = document.getElementById('listaAvisos');
+    cont.innerHTML = '';
+    if (data.status !== 'ok' || data.avisos.length === 0) {
+      cont.innerHTML = '<p style="color:#8a8a86;font-size:12px;">Sin mensajes publicados.</p>';
+      return;
+    }
+    data.avisos.slice().reverse().forEach(function (a) {
+      var div = document.createElement('div');
+      div.className = 'marca-item';
+      var span = document.createElement('span');
+      span.style.marginRight = '8px';
+      span.textContent = a.mensaje + (a.fecha ? ' · ' + a.fecha : '');
+      div.appendChild(span);
+      var btnDel = document.createElement('button');
+      btnDel.textContent = 'Eliminar';
+      btnDel.addEventListener('click', function () { eliminarAviso(a.fila); });
+      div.appendChild(btnDel);
+      cont.appendChild(div);
+    });
+  });
+}
+
+function eliminarAviso(fila) {
+  var key = document.getElementById('inKey').value.trim();
+  if (!key) {
+    alert('Completá la clave arriba para poder eliminar.');
+    return;
+  }
+  var url = API_URL + '?action=eliminar_aviso&key=' + encodeURIComponent(key) + '&fila=' + fila;
+  fetch(url).then(function (r) { return r.json(); }).then(function () { cargarAvisosAdmin(); });
+}
+
+cargarAvisosAdmin();
 </script>
 <script>
 // ================== UBICACION ==================
@@ -292,11 +333,12 @@ function cargarRutaEnMapa() {
     if (data.status !== 'ok' || !data.kml) return;
     var xml = new DOMParser().parseFromString(data.kml, 'text/xml');
     var geojson = toGeoJSON.kml(xml);
-    capaRuta = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 3 } }).addTo(mapaAdmin);
-    mapaAdmin.fitBounds(capaRuta.getBounds(), { padding: [20, 20] });
+    var glow = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 11, opacity: .25 } }).addTo(mapaAdmin);
+    var linea = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 4, opacity: 1 } }).addTo(mapaAdmin);
+    capaRuta = L.layerGroup([glow, linea]).addTo(mapaAdmin);
+    mapaAdmin.fitBounds(linea.getBounds(), { padding: [20, 20] });
   });
 }
 </script>
 </body>
 </html>
-

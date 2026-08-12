@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v6 -->
+<!-- GALERIA TAPIR — v7 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -238,7 +238,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v6';
+var APP_VERSION = 'v7';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -603,7 +603,9 @@ function cargarMapa() {
     if (hayRuta) {
       var xml = new DOMParser().parseFromString(datosRuta.kml, 'text/xml');
       var geojson = toGeoJSON.kml(xml);
-      capaRuta = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 3, opacity: .85 } }).addTo(mapaCliente);
+      var glow = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 11, opacity: .25 } }).addTo(mapaCliente);
+      var linea = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 4, opacity: 1 } }).addTo(mapaCliente);
+      capaRuta = linea;
     }
 
     var puntos = [];
