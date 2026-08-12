@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v9 -->
+<!-- GALERIA TAPIR — v10 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -78,6 +78,10 @@
   .marker-icono.ambos svg{ width:13px; height:13px; }
   .leaflet-popup-content-wrapper{ background:var(--card); color:var(--text); border-radius:8px; }
   .leaflet-popup-tip{ background:var(--card); }
+  .etiqueta-tramo{ background:rgba(19,19,19,.85); color:var(--cyan); border:0.5px solid rgba(0,229,255,.5);
+                    border-radius:4px; font-size:10px; font-weight:600; padding:2px 6px;
+                    box-shadow:none; text-shadow:0 0 6px rgba(0,229,255,.6); }
+  .etiqueta-tramo::before{ display:none; }
 
   .lista-puntos{ margin-bottom:20px; }
   .punto-item{ display:flex; gap:10px; align-items:flex-start; background:var(--card);
@@ -249,7 +253,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v9';
+var APP_VERSION = 'v10';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -625,8 +629,18 @@ function cargarMapa() {
     if (hayRuta) {
       var xml = new DOMParser().parseFromString(datosRuta.kml, 'text/xml');
       var geojson = toGeoJSON.kml(xml);
-      var glow = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 11, opacity: .25 } }).addTo(mapaCliente);
-      var linea = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 4, opacity: 1 } }).addTo(mapaCliente);
+      var soloLineas = { filter: function (f) { return f.geometry && f.geometry.type.indexOf('LineString') > -1; } };
+      var glow = L.geoJSON(geojson, Object.assign({ style: { color: '#00e5ff', weight: 11, opacity: .25 } }, soloLineas)).addTo(mapaCliente);
+      var linea = L.geoJSON(geojson, Object.assign({
+        style: { color: '#00e5ff', weight: 4, opacity: 1 },
+        onEachFeature: function (feature, layer) {
+          if (feature.properties && feature.properties.name) {
+            layer.bindTooltip(feature.properties.name, {
+              permanent: true, direction: 'center', className: 'etiqueta-tramo'
+            });
+          }
+        }
+      }, soloLineas)).addTo(mapaCliente);
       capaRuta = linea;
     }
 
