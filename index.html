@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v12 -->
+<!-- GALERIA TAPIR — v13 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -253,7 +253,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v12';
+var APP_VERSION = 'v13';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -593,6 +593,9 @@ function etiquetaParaTipo(tipo) {
   return 'Foto';
 }
 var mapaCliente = null;
+var capaRutaCliente = null;
+var capaMarcadoresCliente = null;
+var primeraCargaMapa = true;
 
 function tiempoRelativo(fechaTexto) {
   // fechaTexto viene como "dd/MM HH:mm" en hora local del script
@@ -625,6 +628,10 @@ function cargarMapa() {
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapaCliente);
     }
 
+    // limpiamos lo que hubiera de una carga anterior, para no duplicar
+    if (capaRutaCliente) { mapaCliente.removeLayer(capaRutaCliente); capaRutaCliente = null; }
+    if (capaMarcadoresCliente) { mapaCliente.removeLayer(capaMarcadoresCliente); capaMarcadoresCliente = null; }
+
     var capaRuta = null;
     if (hayRuta) {
       var xml = new DOMParser().parseFromString(datosRuta.kml, 'text/xml');
@@ -642,10 +649,12 @@ function cargarMapa() {
         }
       }, soloLineas)).addTo(mapaCliente);
       capaRuta = linea;
+      capaRutaCliente = L.layerGroup([glow, linea]);
     }
 
     var puntos = [];
     if (hayUbicaciones) {
+      var marcadores = [];
       datosUbicaciones.ubicaciones.forEach(function (u) {
         var icono = L.divIcon({
           className: '',
@@ -653,13 +662,20 @@ function cargarMapa() {
           iconSize: [32, 32],
           iconAnchor: [16, 16]
         });
-        var m = L.marker([u.lat, u.lng], { icon: icono }).addTo(mapaCliente);
+        var m = L.marker([u.lat, u.lng], { icon: icono });
         var popupTexto = etiquetaParaTipo(u.tipo) + (u.descripcion ? ' — ' + u.descripcion : '') + '<br><small>' + u.fecha + '</small>';
         m.bindPopup(popupTexto);
+        marcadores.push(m);
         puntos.push([u.lat, u.lng]);
       });
+      capaMarcadoresCliente = L.layerGroup(marcadores).addTo(mapaCliente);
       renderListaPuntos(datosUbicaciones.ubicaciones);
     }
+
+    // el encuadre del mapa solo se ajusta la primera vez que hay datos;
+    // en las actualizaciones automáticas siguientes no le movemos el mapa al usuario
+    if (!primeraCargaMapa) return;
+    primeraCargaMapa = false;
 
     if (puntos.length === 1 && !hayRuta) {
       setTimeout(function () {
@@ -683,6 +699,11 @@ function cargarMapa() {
     }
   });
 }
+
+// revisa cada 20 segundos si hay ubicaciones nuevas, sin recargar toda la pagina
+setInterval(function () {
+  if (estado.cliente) cargarMapa();
+}, 20000);
 
 function renderListaPuntos(ubicaciones) {
   var cont = document.getElementById('listaPuntos');
