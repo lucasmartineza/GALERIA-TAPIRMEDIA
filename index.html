@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v7 -->
+<!-- GALERIA TAPIR — v8 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -238,7 +238,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v7';
+var APP_VERSION = 'v8';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -624,15 +624,25 @@ function cargarMapa() {
     }
 
     if (puntos.length === 1 && !hayRuta) {
-      mapaCliente.setView(puntos[0], 14);
+      setTimeout(function () {
+        mapaCliente.invalidateSize();
+        mapaCliente.setView(puntos[0], 15);
+      }, 250);
     } else if (capaRuta) {
       var bounds = capaRuta.getBounds();
       puntos.forEach(function (p) { bounds.extend(p); });
-      mapaCliente.fitBounds(bounds, { padding: [30, 30] });
+      setTimeout(function () {
+        mapaCliente.invalidateSize();
+        mapaCliente.fitBounds(bounds, { padding: [30, 30] });
+      }, 250);
     } else if (puntos.length > 1) {
-      mapaCliente.fitBounds(puntos, { padding: [30, 30] });
+      setTimeout(function () {
+        mapaCliente.invalidateSize();
+        mapaCliente.fitBounds(puntos, { padding: [30, 30] });
+      }, 250);
+    } else {
+      setTimeout(function () { mapaCliente.invalidateSize(); }, 250);
     }
-    setTimeout(function () { mapaCliente.invalidateSize(); }, 200);
   });
 }
 
