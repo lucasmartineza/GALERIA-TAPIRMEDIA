@@ -190,6 +190,10 @@ var mapaAdmin = L.map('mapaAdmin').setView([-32.15, -64.35], 11); // Córdoba, a
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© OpenStreetMap'
 }).addTo(mapaAdmin);
+setTimeout(function () {
+  mapaAdmin.invalidateSize();
+  mapaAdmin.setView([-32.15, -64.35], 11);
+}, 300);
 var marcadorManual = null;
 
 mapaAdmin.on('click', function (ev) {
@@ -336,7 +340,10 @@ function cargarRutaEnMapa() {
     var glow = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 11, opacity: .25 } }).addTo(mapaAdmin);
     var linea = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 4, opacity: 1 } }).addTo(mapaAdmin);
     capaRuta = L.layerGroup([glow, linea]).addTo(mapaAdmin);
-    mapaAdmin.fitBounds(linea.getBounds(), { padding: [20, 20] });
+    setTimeout(function () {
+      mapaAdmin.invalidateSize();
+      mapaAdmin.fitBounds(linea.getBounds(), { padding: [20, 20] });
+    }, 250);
   });
 }
 </script>
