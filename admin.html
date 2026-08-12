@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tapir Media — Admin avisos</title>
+<title>Tapir Media — Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   body{ margin:0; background:#131313; color:#eaeaea; font-family:'Space Grotesk',system-ui,sans-serif;
         min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px; }
@@ -21,6 +22,18 @@
   .msg{ font-size:13px; text-align:center; margin-top:12px; }
   .ok{ color:#00e5ff; }
   .err{ color:#e24b4a; }
+  .separador{ border:none; border-top:0.5px solid #3a3939; margin:32px 0; }
+  h2{ font-size:15px; margin:0 0 16px; }
+  .tipo-toggle{ display:flex; gap:8px; margin-bottom:16px; }
+  .tipo-toggle button{ background:#1c1b1b; border:0.5px solid #3a3939; color:#8a8a86;
+                        display:flex; align-items:center; justify-content:center; gap:6px; }
+  .tipo-toggle button.activo{ background:rgba(0,229,255,.12); border-color:#00e5ff; color:#00e5ff; }
+  .tipo-toggle svg{ width:16px; height:16px; }
+  #mapaAdmin{ height:220px; border-radius:8px; margin-bottom:16px; border:0.5px solid #3a3939; }
+  .marca-item{ display:flex; justify-content:space-between; align-items:center; background:#1c1b1b;
+               border:0.5px solid #3a3939; border-radius:8px; padding:10px 12px; margin-bottom:8px;
+               font-size:13px; }
+  .marca-item button{ width:auto; padding:6px 10px; font-size:11px; background:#e24b4a; color:#fff; }
 </style>
 </head>
 <body>
@@ -32,7 +45,48 @@
   <textarea id="inMensaje" placeholder="Escribí el aviso..."></textarea>
   <button id="btnEnviar">Publicar aviso</button>
   <div id="msg" class="msg"></div>
+
+  <hr class="separador">
+
+  <h2>Marcar ubicación</h2>
+  <label>Evento (tiene que coincidir con la columna "evento" del índice)</label>
+  <input type="text" id="inEvento" placeholder="Ej: Rally Mina Clavero">
+
+  <div class="tipo-toggle">
+    <button type="button" id="btnTipoFoto" class="activo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Foto
+    </button>
+    <button type="button" id="btnTipoVideo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+      Video
+    </button>
+  </div>
+
+  <button id="btnGPS">Marcar mi ubicación actual (GPS)</button>
+  <div id="msgUbicacion" class="msg"></div>
+
+  <p style="font-size:12px;color:#8a8a86;text-align:center;margin:20px 0 10px;">o tocá el mapa para marcar a mano</p>
+  <div id="mapaAdmin"></div>
+  <button id="btnPublicarMapa" disabled>Tocá un punto en el mapa primero</button>
+
+  <p style="font-size:12px;color:#8a8a86;margin:24px 0 8px;">Marcas activas</p>
+  <div id="listaMarcas"></div>
+
+  <hr class="separador">
+
+  <h2>Recorrido del evento (KMZ)</h2>
+  <p style="font-size:12px;color:#8a8a86;margin:0 0 12px;">
+    Subís el archivo .kmz a Drive, abrís el archivo, copiás el ID de la URL
+    (la parte después de <code>/d/</code>) y lo pegás acá.
+  </p>
+  <input type="text" id="inKmzId" placeholder="ID del archivo .kmz en Drive">
+  <button id="btnGuardarRuta">Guardar recorrido</button>
+  <div id="msgRuta" class="msg"></div>
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 
 <script>
 var API_URL = 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec';
@@ -73,6 +127,175 @@ document.getElementById('btnEnviar').addEventListener('click', function () {
     msg.className = 'msg err';
   });
 });
+</script>
+<script>
+// ================== UBICACION ==================
+var tipoSeleccionado = 'foto';
+var puntoManual = null;
+
+document.getElementById('btnTipoFoto').addEventListener('click', function () {
+  tipoSeleccionado = 'foto';
+  this.classList.add('activo');
+  document.getElementById('btnTipoVideo').classList.remove('activo');
+});
+document.getElementById('btnTipoVideo').addEventListener('click', function () {
+  tipoSeleccionado = 'video';
+  this.classList.add('activo');
+  document.getElementById('btnTipoFoto').classList.remove('activo');
+});
+
+// --- Mapa manual (tocar para marcar) ---
+var mapaAdmin = L.map('mapaAdmin').setView([-32.15, -64.35], 11); // Córdoba, ajustalo si hace falta
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(mapaAdmin);
+var marcadorManual = null;
+
+mapaAdmin.on('click', function (ev) {
+  puntoManual = ev.latlng;
+  if (marcadorManual) mapaAdmin.removeLayer(marcadorManual);
+  marcadorManual = L.marker(puntoManual).addTo(mapaAdmin);
+  document.getElementById('btnPublicarMapa').disabled = false;
+  document.getElementById('btnPublicarMapa').textContent = 'Publicar este punto';
+});
+
+document.getElementById('btnPublicarMapa').addEventListener('click', function () {
+  if (!puntoManual) return;
+  publicarUbicacion(puntoManual.lat, puntoManual.lng);
+});
+
+// --- GPS ---
+document.getElementById('btnGPS').addEventListener('click', function () {
+  var btn = this;
+  var msg = document.getElementById('msgUbicacion');
+  if (!navigator.geolocation) {
+    msg.textContent = 'Este navegador no soporta GPS.';
+    msg.className = 'msg err';
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = 'Buscando tu ubicación...';
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    btn.disabled = false;
+    btn.textContent = 'Marcar mi ubicación actual (GPS)';
+    publicarUbicacion(pos.coords.latitude, pos.coords.longitude);
+  }, function () {
+    btn.disabled = false;
+    btn.textContent = 'Marcar mi ubicación actual (GPS)';
+    msg.textContent = 'No pudimos acceder al GPS. Revisá los permisos del navegador.';
+    msg.className = 'msg err';
+  });
+});
+
+function publicarUbicacion(lat, lng) {
+  var evento = document.getElementById('inEvento').value.trim();
+  var key = document.getElementById('inKey').value.trim();
+  var msg = document.getElementById('msgUbicacion');
+
+  if (!evento || !key) {
+    msg.textContent = 'Completá la clave (arriba) y el nombre del evento.';
+    msg.className = 'msg err';
+    return;
+  }
+
+  var url = API_URL + '?action=nueva_ubicacion&key=' + encodeURIComponent(key) +
+            '&lat=' + lat + '&lng=' + lng + '&tipo=' + tipoSeleccionado +
+            '&evento=' + encodeURIComponent(evento);
+
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.status === 'ok') {
+      msg.textContent = 'Ubicación publicada.';
+      msg.className = 'msg ok';
+      puntoManual = null;
+      document.getElementById('btnPublicarMapa').disabled = true;
+      document.getElementById('btnPublicarMapa').textContent = 'Tocá un punto en el mapa primero';
+      cargarMarcas();
+    } else {
+      msg.textContent = data.error || 'No se pudo publicar.';
+      msg.className = 'msg err';
+    }
+  });
+}
+
+// --- Listado de marcas activas ---
+function cargarMarcas() {
+  var evento = document.getElementById('inEvento').value.trim();
+  if (!evento) return;
+  var url = API_URL + '?action=ubicaciones&evento=' + encodeURIComponent(evento);
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var cont = document.getElementById('listaMarcas');
+    cont.innerHTML = '';
+    if (data.status !== 'ok' || data.ubicaciones.length === 0) {
+      cont.innerHTML = '<p style="color:#8a8a86;font-size:12px;">Sin marcas activas para este evento.</p>';
+      return;
+    }
+    data.ubicaciones.forEach(function (u) {
+      var div = document.createElement('div');
+      div.className = 'marca-item';
+      div.innerHTML = '<span>' + (u.tipo === 'video' ? 'Video' : 'Foto') + ' · ' + u.fecha + '</span>';
+      var btn = document.createElement('button');
+      btn.textContent = 'Quitar';
+      btn.addEventListener('click', function () { quitarMarca(u.id); });
+      div.appendChild(btn);
+      cont.appendChild(div);
+    });
+  });
+}
+
+function quitarMarca(id) {
+  var key = document.getElementById('inKey').value.trim();
+  var url = API_URL + '?action=quitar_ubicacion&key=' + encodeURIComponent(key) + '&id=' + id;
+  fetch(url).then(function (r) { return r.json(); }).then(function () { cargarMarcas(); });
+}
+
+document.getElementById('inEvento').addEventListener('change', function () {
+  cargarMarcas();
+  cargarRutaEnMapa();
+});
+
+// --- Recorrido KMZ ---
+var capaRuta = null;
+
+document.getElementById('btnGuardarRuta').addEventListener('click', function () {
+  var evento = document.getElementById('inEvento').value.trim();
+  var key = document.getElementById('inKey').value.trim();
+  var kmzId = document.getElementById('inKmzId').value.trim();
+  var msg = document.getElementById('msgRuta');
+
+  if (!evento || !key || !kmzId) {
+    msg.textContent = 'Completá clave, evento e ID del archivo.';
+    msg.className = 'msg err';
+    return;
+  }
+
+  var url = API_URL + '?action=guardar_ruta&key=' + encodeURIComponent(key) +
+            '&evento=' + encodeURIComponent(evento) + '&kmz_file_id=' + encodeURIComponent(kmzId);
+
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    if (data.status === 'ok') {
+      msg.textContent = 'Recorrido guardado.';
+      msg.className = 'msg ok';
+      cargarRutaEnMapa();
+    } else {
+      msg.textContent = data.error || 'No se pudo guardar.';
+      msg.className = 'msg err';
+    }
+  });
+});
+
+function cargarRutaEnMapa() {
+  var evento = document.getElementById('inEvento').value.trim();
+  if (!evento) return;
+  var url = API_URL + '?action=ruta&evento=' + encodeURIComponent(evento);
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    if (capaRuta) { mapaAdmin.removeLayer(capaRuta); capaRuta = null; }
+    if (data.status !== 'ok' || !data.kml) return;
+    var xml = new DOMParser().parseFromString(data.kml, 'text/xml');
+    var geojson = toGeoJSON.kml(xml);
+    capaRuta = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 3 } }).addTo(mapaAdmin);
+    mapaAdmin.fitBounds(capaRuta.getBounds(), { padding: [20, 20] });
+  });
+}
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v4 -->
+<!-- GALERIA TAPIR — v6 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -7,6 +7,7 @@
 <title>Tapir Media — Galería</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#131313">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
     --bg:#131313;
@@ -67,6 +68,15 @@
   .cliente{ margin:4px 0 16px; text-align:center; }
   .cliente .nombre{ font-size:15px; font-weight:600; margin:0 0 2px; }
   .cliente .evento{ font-size:12px; color:var(--text-muted); margin:0; }
+
+  .mapa-cliente{ height:180px; border-radius:8px; margin-bottom:16px; border:0.5px solid var(--border);
+                 overflow:hidden; }
+  .marker-icono{ background:var(--bg); border:2px solid var(--cyan); border-radius:50%;
+                  width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+                  box-shadow:0 0 10px rgba(0,229,255,.5); }
+  .marker-icono svg{ width:16px; height:16px; stroke:var(--cyan); }
+  .leaflet-popup-content-wrapper{ background:var(--card); color:var(--text); border-radius:8px; }
+  .leaflet-popup-tip{ background:var(--card); }
 
   .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:90px; }
   .thumb{ position:relative; aspect-ratio:1; background:var(--card); border-radius:8px;
@@ -171,6 +181,7 @@
     <p class="nombre" id="clienteNombre"></p>
     <p class="evento" id="clienteEvento"></p>
   </div>
+  <div id="mapaCliente" class="mapa-cliente hidden"></div>
   <div id="grid" class="grid"></div>
   <div id="vacio" class="empty hidden">Todavía no hay material cargado. Volvé a chequear más tarde.</div>
   <div class="barra-inferior">
@@ -223,9 +234,11 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v4';
+var APP_VERSION = 'v6';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -298,6 +311,7 @@ function entrarGaleria(cliente) {
   document.getElementById('clienteEvento').textContent = cliente.evento || '';
   cargarArchivos();
   cargarAvisos();
+  cargarMapa();
 }
 
 // ================== GALERIA ==================
@@ -548,6 +562,77 @@ document.getElementById('btnContacto').addEventListener('click', function () {
 document.getElementById('panelContacto').addEventListener('click', function (ev) {
   if (ev.target.id === 'panelContacto') ev.currentTarget.classList.add('hidden');
 });
+
+// ================== MAPA (dónde está el equipo) ==================
+var ICONO_CAMARA_FOTO = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+var ICONO_CAMARA_VIDEO = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>';
+var mapaCliente = null;
+
+function tiempoRelativo(fechaTexto) {
+  // fechaTexto viene como "dd/MM HH:mm" en hora local del script
+  return fechaTexto || '';
+}
+
+function cargarMapa() {
+  var evento = estado.cliente.evento;
+  if (!evento) return;
+
+  var urlUbicaciones = CONFIG.API_URL + '?action=ubicaciones&evento=' + encodeURIComponent(evento);
+  var urlRuta = CONFIG.API_URL + '?action=ruta&evento=' + encodeURIComponent(evento);
+
+  Promise.all([
+    fetch(urlUbicaciones).then(function (r) { return r.json(); }),
+    fetch(urlRuta).then(function (r) { return r.json(); })
+  ]).then(function (resultados) {
+    var datosUbicaciones = resultados[0];
+    var datosRuta = resultados[1];
+    var hayUbicaciones = datosUbicaciones.status === 'ok' && datosUbicaciones.ubicaciones.length > 0;
+    var hayRuta = datosRuta.status === 'ok' && !!datosRuta.kml;
+
+    if (!hayUbicaciones && !hayRuta) return;
+
+    var cont = document.getElementById('mapaCliente');
+    cont.classList.remove('hidden');
+
+    if (!mapaCliente) {
+      mapaCliente = L.map('mapaCliente', { zoomControl: false, attributionControl: false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapaCliente);
+    }
+
+    var capaRuta = null;
+    if (hayRuta) {
+      var xml = new DOMParser().parseFromString(datosRuta.kml, 'text/xml');
+      var geojson = toGeoJSON.kml(xml);
+      capaRuta = L.geoJSON(geojson, { style: { color: '#00e5ff', weight: 3, opacity: .85 } }).addTo(mapaCliente);
+    }
+
+    var puntos = [];
+    if (hayUbicaciones) {
+      datosUbicaciones.ubicaciones.forEach(function (u) {
+        var icono = L.divIcon({
+          className: '',
+          html: '<div class="marker-icono">' + (u.tipo === 'video' ? ICONO_CAMARA_VIDEO : ICONO_CAMARA_FOTO) + '</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+        var m = L.marker([u.lat, u.lng], { icon: icono }).addTo(mapaCliente);
+        m.bindPopup((u.tipo === 'video' ? 'Grabando acá' : 'Sacando fotos acá') + ' · ' + tiempoRelativo(u.fecha));
+        puntos.push([u.lat, u.lng]);
+      });
+    }
+
+    if (puntos.length === 1 && !hayRuta) {
+      mapaCliente.setView(puntos[0], 14);
+    } else if (capaRuta) {
+      var bounds = capaRuta.getBounds();
+      puntos.forEach(function (p) { bounds.extend(p); });
+      mapaCliente.fitBounds(bounds, { padding: [30, 30] });
+    } else if (puntos.length > 1) {
+      mapaCliente.fitBounds(puntos, { padding: [30, 30] });
+    }
+    setTimeout(function () { mapaCliente.invalidateSize(); }, 200);
+  });
+}
 
 // ================== RECORDAR SESION ==================
 (function () {
