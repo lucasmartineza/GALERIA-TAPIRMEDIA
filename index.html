@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v13 -->
+<!-- GALERIA TAPIR — v14 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -253,7 +253,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v13';
+var APP_VERSION = 'v14';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -653,6 +653,7 @@ function cargarMapa() {
     }
 
     var puntos = [];
+    var marcadoresPorId = {};
     if (hayUbicaciones) {
       var marcadores = [];
       datosUbicaciones.ubicaciones.forEach(function (u) {
@@ -666,10 +667,11 @@ function cargarMapa() {
         var popupTexto = etiquetaParaTipo(u.tipo) + (u.descripcion ? ' — ' + u.descripcion : '') + '<br><small>' + u.fecha + '</small>';
         m.bindPopup(popupTexto);
         marcadores.push(m);
+        marcadoresPorId[u.id] = m;
         puntos.push([u.lat, u.lng]);
       });
       capaMarcadoresCliente = L.layerGroup(marcadores).addTo(mapaCliente);
-      renderListaPuntos(datosUbicaciones.ubicaciones);
+      renderListaPuntos(datosUbicaciones.ubicaciones, marcadoresPorId);
     }
 
     // el encuadre del mapa solo se ajusta la primera vez que hay datos;
@@ -705,7 +707,7 @@ setInterval(function () {
   if (estado.cliente) cargarMapa();
 }, 20000);
 
-function renderListaPuntos(ubicaciones) {
+function renderListaPuntos(ubicaciones, marcadoresPorId) {
   var cont = document.getElementById('listaPuntos');
   cont.innerHTML = '';
   if (!ubicaciones || ubicaciones.length === 0) {
@@ -717,6 +719,7 @@ function renderListaPuntos(ubicaciones) {
   ubicaciones.slice().sort(function (a, b) { return b.timestamp - a.timestamp; }).forEach(function (u) {
     var div = document.createElement('div');
     div.className = 'punto-item';
+    div.style.cursor = 'pointer';
 
     var iconoDiv = document.createElement('div');
     iconoDiv.className = 'marker-icono' + (u.tipo === 'ambos' ? ' ambos' : '');
@@ -739,6 +742,14 @@ function renderListaPuntos(ubicaciones) {
     fecha.textContent = u.fecha;
     textos.appendChild(fecha);
     div.appendChild(textos);
+
+    div.addEventListener('click', function () {
+      if (!mapaCliente) return;
+      mapaCliente.setView([u.lat, u.lng], 16, { animate: true });
+      document.getElementById('mapaCliente').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var marcador = marcadoresPorId && marcadoresPorId[u.id];
+      if (marcador) setTimeout(function () { marcador.openPopup(); }, 400);
+    });
 
     cont.appendChild(div);
   });
