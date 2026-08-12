@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v11 -->
+<!-- GALERIA TAPIR — v12 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -253,7 +253,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v11';
+var APP_VERSION = 'v12';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -433,7 +433,7 @@ function renderGrid() {
 }
 
 function procesarCola(cola) {
-  var CONCURRENCIA = 6; // ahora son links a la CDN de Google, aguanta mas en paralelo
+  var CONCURRENCIA = 30; // CDN de Google, aguanta pedirlas todas casi juntas
   var indice = 0;
 
   function siguiente() {
