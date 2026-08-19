@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v17 -->
+<!-- GALERIA TAPIR — v18 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -123,6 +123,16 @@
   .thumb-acciones button:active{ background:rgba(255,255,255,.1); }
   .thumb-acciones svg{ width:15px; height:15px; stroke:#fff; }
   .thumb-acciones .copiado svg{ stroke:var(--cyan); }
+  .thumb-check{ position:absolute; top:4px; right:4px; z-index:3; width:22px; height:22px;
+                border-radius:50%; border:1.5px solid rgba(255,255,255,.6); background:rgba(0,0,0,.4);
+                display:flex; align-items:center; justify-content:center; }
+  .thumb-check svg{ width:13px; height:13px; stroke:#fff; opacity:0; }
+  .thumb.seleccionada .thumb-check{ background:var(--cyan); border-color:var(--cyan); }
+  .thumb.seleccionada .thumb-check svg{ opacity:1; stroke:#062a2e; }
+  .barra-seleccion{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+  .barra-seleccion button{ width:auto; padding:8px 12px; font-size:12px; background:var(--card);
+                            border:0.5px solid var(--border); color:var(--text); }
+  .barra-seleccion .contador{ font-size:12px; color:var(--text-muted); }
 
   /* NOTIFICACIONES / CONTACTO */
   .panel-avisos{ position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:60;
@@ -222,6 +232,10 @@
   </div>
   <div id="mapaCliente" class="mapa-cliente hidden"></div>
   <div id="listaPuntos" class="lista-puntos hidden"></div>
+  <div class="barra-seleccion">
+    <span class="contador" id="contadorSeleccion"></span>
+    <button id="btnSeleccionar">Seleccionar</button>
+  </div>
   <div id="grid" class="grid"></div>
   <div id="vacio" class="empty hidden">Todavía no hay material cargado. Volvé a chequear más tarde.</div>
   <div class="barra-inferior">
@@ -278,7 +292,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v17';
+var APP_VERSION = 'v18';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -288,7 +302,9 @@ var estado = {
   cliente: null,
   archivos: [],
   archivoActual: null,
-  avisos: []
+  avisos: [],
+  modoSeleccion: false,
+  seleccionados: new Set()
 };
 
 // ================== LOGIN ==================
@@ -404,6 +420,8 @@ function seleccionarCarpeta(index) {
 
 // ================== GALERIA ==================
 function cargarArchivos() {
+  estado.seleccionados.clear();
+  actualizarBotonDescarga();
   mostrarSkeleton();
   var url = CONFIG.API_URL + '?action=files&folder=' + encodeURIComponent(estado.cliente.folder_id);
   fetch(url).then(function (r) { return r.json(); }).then(function (data) {
@@ -463,6 +481,16 @@ function renderGrid() {
 
     var div = document.createElement('div');
     div.className = 'thumb';
+    if (estado.seleccionados.has(a.id)) div.classList.add('seleccionada');
+
+    var check = document.createElement('div');
+    check.className = 'thumb-check';
+    check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+    check.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      toggleSeleccion(a.id, div);
+    });
+    div.appendChild(check);
 
     var skeleton = document.createElement('div');
     skeleton.className = 'skeleton';
@@ -620,15 +648,39 @@ document.getElementById('btnDescargarUno').addEventListener('click', function ()
   if (estado.archivoActual) window.location.href = estado.archivoActual.downloadUrl;
 });
 
-// ================== DESCARGA TOTAL ==================
+// ================== DESCARGA TOTAL / SELECCIONADOS ==================
+function toggleSeleccion(id, divThumb) {
+  if (estado.seleccionados.has(id)) {
+    estado.seleccionados.delete(id);
+    divThumb.classList.remove('seleccionada');
+  } else {
+    estado.seleccionados.add(id);
+    divThumb.classList.add('seleccionada');
+  }
+  actualizarBotonDescarga();
+}
+
+function actualizarBotonDescarga() {
+  var btn = document.getElementById('btnDescargarTodo');
+  var n = estado.seleccionados.size;
+  btn.textContent = n > 0 ? 'Descargar seleccionadas (' + n + ')' : 'Descargar todo';
+}
+
 document.getElementById('btnDescargarTodo').addEventListener('click', function () {
   var btn = this;
+  var n = estado.seleccionados.size;
+  var textoOriginal = n > 0 ? 'Descargar seleccionadas (' + n + ')' : 'Descargar todo';
   btn.innerHTML = '<span class="spinner"></span> Armando el paquete...';
   btn.disabled = true;
+
   var url = CONFIG.API_URL + '?action=zip&folder=' + encodeURIComponent(estado.cliente.folder_id);
+  if (n > 0) {
+    url += '&ids=' + encodeURIComponent(Array.from(estado.seleccionados).join(','));
+  }
   window.location.href = url;
+
   setTimeout(function () {
-    btn.textContent = 'Descargar todo';
+    btn.textContent = textoOriginal;
     btn.disabled = false;
   }, 4000);
 });
