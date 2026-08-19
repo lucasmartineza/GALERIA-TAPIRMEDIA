@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v16 -->
+<!-- GALERIA TAPIR — v17 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -151,6 +151,15 @@
   .preview{ position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:50;
             display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
   .preview img, .preview video{ max-width:100%; max-height:75vh; border-radius:8px; opacity:0; transition:opacity .25s; }
+  .video-poster{ position:relative; max-width:100%; max-height:75vh; cursor:pointer; }
+  .video-poster img{ max-width:100%; max-height:75vh; border-radius:8px; display:block;
+                      opacity:0; transition:opacity .25s; }
+  .video-poster img.cargada{ opacity:1; }
+  .btn-play{ position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:64px; height:64px;
+             border-radius:50%; background:rgba(0,229,255,.9); color:#062a2e; border:none;
+             display:flex; align-items:center; justify-content:center; box-shadow:0 0 20px rgba(0,229,255,.5); }
+  .btn-play svg{ width:28px; height:28px; margin-left:3px; }
+  .video-iframe{ width:min(90vw,700px); height:min(75vh,394px); border:none; border-radius:8px; }
   .preview img.cargada, .preview video.cargada{ opacity:1; }
   .preview .acciones{ display:flex; gap:12px; margin-top:16px; width:100%; max-width:400px; }
   .preview .acciones button{ flex:1; }
@@ -269,7 +278,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v16';
+var APP_VERSION = 'v17';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -549,16 +558,36 @@ function abrirPreview(archivo) {
   document.getElementById('preview').classList.remove('hidden');
 
   if (archivo.esVideo) {
-    var v = document.createElement('video');
-    v.src = archivo.viewUrl;
-    v.controls = true;
-    v.autoplay = true;
-    v.addEventListener('loadeddata', function () {
+    // primero mostramos la miniatura + boton de play, asi se ve al instante
+    // sin esperar a que cargue el reproductor pesado
+    cont.innerHTML = '';
+    barra.classList.add('hidden');
+
+    var wrap = document.createElement('div');
+    wrap.className = 'video-poster';
+
+    var poster = new Image();
+    poster.src = archivo.previewUrl || archivo.thumbnailUrl;
+    poster.addEventListener('load', function () { poster.classList.add('cargada'); });
+    wrap.appendChild(poster);
+
+    var btnPlay = document.createElement('button');
+    btnPlay.className = 'btn-play';
+    btnPlay.innerHTML = ICONO_PLAY;
+    wrap.appendChild(btnPlay);
+
+    wrap.addEventListener('click', function () {
+      barra.classList.remove('hidden');
       cont.innerHTML = '';
-      cont.appendChild(v);
-      v.classList.add('cargada');
-      barra.classList.add('hidden');
+      var iframe = document.createElement('iframe');
+      iframe.src = 'https://drive.google.com/file/d/' + archivo.id + '/preview';
+      iframe.allow = 'autoplay';
+      iframe.className = 'video-iframe';
+      iframe.addEventListener('load', function () { barra.classList.add('hidden'); });
+      cont.appendChild(iframe);
     });
+
+    cont.appendChild(wrap);
   } else {
     var img = new Image();
     var intentoRespaldo = false;
@@ -607,6 +636,7 @@ document.getElementById('btnDescargarTodo').addEventListener('click', function (
 // ================== ICONOS ==================
 var ICONO_DESCARGAR = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>';
 var ICONO_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6-6"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/></svg>';
+var ICONO_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 
 // ================== NOTIFICACIONES ==================
 document.getElementById('btnAvisos').addEventListener('click', abrirAvisos);
