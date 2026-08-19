@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v20 -->
+<!-- GALERIA TAPIR — v21 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -73,6 +73,8 @@
   .selector-carpetas{ margin-top:10px; width:auto; max-width:260px; padding:8px 12px;
                        background:var(--card); border:0.5px solid var(--cyan); border-radius:8px;
                        color:var(--cyan); font-size:13px; font-family:inherit; }
+  .link-salir{ display:block; margin:10px auto 0; width:auto; background:none; border:none;
+               color:var(--text-muted); font-size:11px; text-decoration:underline; padding:4px; }
 
   .mapa-cliente{ height:180px; border-radius:8px; margin-bottom:16px; border:0.5px solid var(--border);
                  overflow:hidden; position:relative; z-index:0; isolation:isolate; }
@@ -229,6 +231,7 @@
     <p class="nombre" id="clienteNombre"></p>
     <p class="evento" id="clienteEvento"></p>
     <select id="selectorCarpetas" class="selector-carpetas hidden"></select>
+    <button id="btnCerrarSesion" class="link-salir">Cerrar sesión</button>
   </div>
   <div id="mapaCliente" class="mapa-cliente hidden"></div>
   <div id="listaPuntos" class="lista-puntos hidden"></div>
@@ -304,7 +307,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v20';
+var APP_VERSION = 'v21';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -936,6 +939,31 @@ function renderListaPuntos(ubicaciones, marcadoresPorId) {
     cont.appendChild(div);
   });
 }
+
+// ================== CERRAR SESION ==================
+document.getElementById('btnCerrarSesion').addEventListener('click', function () {
+  localStorage.removeItem('tapir_cliente');
+
+  estado.cliente = null;
+  estado.carpetas = [];
+  estado.carpetaIndex = 0;
+  estado.esCM = false;
+  estado.archivos = [];
+  estado.seleccionados.clear();
+  primeraCargaMapa = true;
+
+  if (mapaCliente) { mapaCliente.remove(); mapaCliente = null; }
+  capaRutaCliente = null;
+  capaMarcadoresCliente = null;
+
+  document.getElementById('inNombre').value = '';
+  document.getElementById('inApellido').value = '';
+  document.getElementById('loginMsg').textContent = '';
+  document.getElementById('opciones').innerHTML = '';
+
+  document.getElementById('pantallaGaleria').classList.add('hidden');
+  document.getElementById('pantallaLogin').classList.remove('hidden');
+});
 
 // ================== RECORDAR SESION ==================
 (function () {
