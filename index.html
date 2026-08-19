@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- GALERIA TAPIR — v15 -->
+<!-- GALERIA TAPIR — v16 -->
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -70,6 +70,9 @@
   .cliente{ margin:4px 0 16px; text-align:center; }
   .cliente .nombre{ font-size:15px; font-weight:600; margin:0 0 2px; }
   .cliente .evento{ font-size:12px; color:var(--text-muted); margin:0; }
+  .selector-carpetas{ margin-top:10px; width:auto; max-width:260px; padding:8px 12px;
+                       background:var(--card); border:0.5px solid var(--cyan); border-radius:8px;
+                       color:var(--cyan); font-size:13px; font-family:inherit; }
 
   .mapa-cliente{ height:180px; border-radius:8px; margin-bottom:16px; border:0.5px solid var(--border);
                  overflow:hidden; }
@@ -95,8 +98,10 @@
   .punto-item .fecha{ font-size:11px; color:var(--text-muted); margin-top:4px; }
 
   .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:90px; }
+  .thumb-cont{ display:flex; flex-direction:column; }
   .thumb{ position:relative; aspect-ratio:1; background:var(--card); border-radius:8px;
           border:0.5px solid var(--border); overflow:hidden; cursor:pointer; }
+  .thumb-meta{ display:none; font-size:10px; color:var(--text-muted); padding:4px 2px 0; }
   .thumb img{ width:100%; height:100%; object-fit:cover; display:block; opacity:0; transition:opacity .3s; }
   .thumb img.cargada{ opacity:1; }
   .skeleton{ position:absolute; inset:0; background:linear-gradient(90deg, var(--card) 25%, #262524 50%, var(--card) 75%);
@@ -161,6 +166,14 @@
                     border-top-color:var(--cyan); border-radius:50%; animation:spin .7s linear infinite; }
 
   .empty{ text-align:center; color:var(--text-muted); font-size:13px; margin-top:60px; }
+
+  /* MODO PC */
+  @media (min-width:900px){
+    .screen{ max-width:1100px; padding:32px 24px 90px; }
+    .grid{ grid-template-columns:repeat(6,1fr); gap:14px; }
+    .thumb-meta{ display:flex; justify-content:space-between; }
+    .barra-inferior button{ max-width:300px; }
+  }
 </style>
 </head>
 <body>
@@ -196,6 +209,7 @@
   <div class="cliente">
     <p class="nombre" id="clienteNombre"></p>
     <p class="evento" id="clienteEvento"></p>
+    <select id="selectorCarpetas" class="selector-carpetas hidden"></select>
   </div>
   <div id="mapaCliente" class="mapa-cliente hidden"></div>
   <div id="listaPuntos" class="lista-puntos hidden"></div>
@@ -255,7 +269,7 @@
 <script src="https://unpkg.com/@mapbox/togeojson@0.16.0/togeojson.js"></script>
 <script>
 // ================== CONFIG ==================
-var APP_VERSION = 'v15';
+var APP_VERSION = 'v16';
 var CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec'
 };
@@ -292,6 +306,8 @@ function hacerLogin() {
   fetch(url).then(function (r) { return r.json(); }).then(function (data) {
     if (data.status === 'ok') {
       entrarGaleria(data.cliente);
+    } else if (data.status === 'ok_cm') {
+      entrarComoCM(data.cm);
     } else if (data.status === 'multiple') {
       mostrarOpciones(data.opciones);
       btn.disabled = false;
@@ -321,13 +337,59 @@ function mostrarOpciones(opciones) {
 
 function entrarGaleria(cliente) {
   estado.cliente = cliente;
+  estado.carpetas = [{ folder_id: cliente.folder_id, evento: cliente.evento, etiqueta: cliente.evento || 'Galería' }];
+  estado.carpetaIndex = 0;
   localStorage.setItem('tapir_cliente', JSON.stringify(cliente));
   document.getElementById('pantallaLogin').classList.add('hidden');
   document.getElementById('pantallaGaleria').classList.remove('hidden');
   document.getElementById('clienteNombre').textContent = cliente.nombre + ' ' + cliente.apellido;
   document.getElementById('clienteEvento').textContent = cliente.evento || '';
+  document.getElementById('selectorCarpetas').classList.add('hidden');
   cargarArchivos();
   cargarAvisos();
+  cargarMapa();
+}
+
+function entrarComoCM(cm) {
+  estado.esCM = true;
+  estado.carpetas = cm.carpetas;
+  estado.carpetaIndex = 0;
+  var guardado = { esCM: true, nombre: cm.nombre, apellido: cm.apellido, carpetas: cm.carpetas };
+  localStorage.setItem('tapir_cliente', JSON.stringify(guardado));
+  document.getElementById('pantallaLogin').classList.add('hidden');
+  document.getElementById('pantallaGaleria').classList.remove('hidden');
+  document.getElementById('clienteNombre').textContent = cm.nombre + ' ' + cm.apellido;
+
+  var selector = document.getElementById('selectorCarpetas');
+  selector.innerHTML = '';
+  cm.carpetas.forEach(function (c, i) {
+    var opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = c.etiqueta;
+    selector.appendChild(opt);
+  });
+  selector.classList.toggle('hidden', cm.carpetas.length <= 1);
+
+  seleccionarCarpeta(0);
+}
+
+document.getElementById('selectorCarpetas').addEventListener('change', function () {
+  seleccionarCarpeta(parseInt(this.value, 10));
+});
+
+function seleccionarCarpeta(index) {
+  estado.carpetaIndex = index;
+  var c = estado.carpetas[index];
+  estado.cliente = { folder_id: c.folder_id, evento: c.evento };
+  document.getElementById('clienteEvento').textContent = c.etiqueta || c.evento || '';
+
+  // reseteamos el mapa, porque cambia de evento/recorrido
+  if (mapaCliente) { mapaCliente.remove(); mapaCliente = null; }
+  capaRutaCliente = null;
+  capaMarcadoresCliente = null;
+  primeraCargaMapa = true;
+
+  cargarArchivos();
   cargarMapa();
 }
 
@@ -357,6 +419,20 @@ function claveVisita() {
   return 'tapir_ultima_visita_' + estado.cliente.folder_id;
 }
 
+function formatearPeso(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function formatearHora(timestampMs) {
+  if (!timestampMs) return '';
+  var d = new Date(timestampMs);
+  var hh = String(d.getHours()).padStart(2, '0');
+  var mm = String(d.getMinutes()).padStart(2, '0');
+  return hh + ':' + mm;
+}
+
 function renderGrid() {
   var grid = document.getElementById('grid');
   var vacio = document.getElementById('vacio');
@@ -373,6 +449,9 @@ function renderGrid() {
   var colaCarga = [];
 
   estado.archivos.forEach(function (a) {
+    var cont = document.createElement('div');
+    cont.className = 'thumb-cont';
+
     var div = document.createElement('div');
     div.className = 'thumb';
 
@@ -424,7 +503,14 @@ function renderGrid() {
     div.appendChild(acciones);
 
     div.addEventListener('click', function () { abrirPreview(a); });
-    grid.appendChild(div);
+    cont.appendChild(div);
+
+    var meta = document.createElement('div');
+    meta.className = 'thumb-meta';
+    meta.innerHTML = '<span>' + formatearPeso(a.peso) + '</span><span>' + formatearHora(a.fechaCreacion) + '</span>';
+    cont.appendChild(meta);
+
+    grid.appendChild(cont);
     colaCarga.push(img);
   });
 
@@ -760,7 +846,9 @@ function renderListaPuntos(ubicaciones, marcadoresPorId) {
 // ================== RECORDAR SESION ==================
 (function () {
   var guardado = localStorage.getItem('tapir_cliente');
-  if (guardado) entrarGaleria(JSON.parse(guardado));
+  if (!guardado) return;
+  var obj = JSON.parse(guardado);
+  if (obj.esCM) entrarComoCM(obj); else entrarGaleria(obj);
 })();
 
 // ================== SERVICE WORKER (instalable) ==================
