@@ -29,6 +29,10 @@
                margin-bottom:20px; box-shadow:0 0 12px rgba(0,229,255,.2); }
   .evento-box label{ color:#00e5ff; font-weight:600; margin-bottom:8px; }
   .evento-box input{ margin-bottom:0; }
+  .btn-notificar{ background:#e2a83a; box-shadow:0 0 14px rgba(226,168,58,.35); font-size:15px; padding:16px; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .spinner{ display:inline-block; width:14px; height:14px; border:2px solid rgba(0,0,0,.25);
+            border-top-color:#062a2e; border-radius:50%; animation:spin .7s linear infinite; }
   #mapaAdmin{ height:240px; border-radius:8px; margin-bottom:14px; border:0.5px solid #3a3939; }
   .tipo-toggle{ display:flex; gap:6px; margin-bottom:14px; }
   .tipo-toggle button{ background:#1c1b1b; border:0.5px solid #3a3939; color:#8a8a86;
@@ -72,6 +76,12 @@
     <label for="inEvento">Evento en curso</label>
     <input type="text" id="inEvento" placeholder="Ej: mina clavero">
   </div>
+
+  <button id="btnNotificarAhora" class="btn-notificar">Notificar material nuevo</button>
+  <p class="subtexto" style="text-align:center;margin-top:6px;">
+    Tocalo apenas termines de subir una tanda de fotos/videos — les llega el mail al toque.
+  </p>
+  <div id="msgNotificar" class="msg"></div>
 
   <h2>Ubicación del equipo</h2>
   <p class="subtexto">Marcá dónde vas a estar y qué tipo de contenido vas a generar ahí.</p>
@@ -137,6 +147,33 @@
 var API_URL = 'https://script.google.com/macros/s/AKfycbzzBTWNHpsnJjArpGGW5v4ieMouTwWKVM5V4biTDmxZ_WJUJj4YhGSxSWmUZtP0pPl1/exec';
 // Clave interna: si la cambiaste en Code.gs (ADMIN_KEY), actualizala acá también.
 var ADMIN_KEY = 'tapir2026';
+
+document.getElementById('btnNotificarAhora').addEventListener('click', function () {
+  var btn = this;
+  var msg = document.getElementById('msgNotificar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Revisando y enviando...';
+
+  var url = API_URL + '?action=notificar_ahora&key=' + encodeURIComponent(ADMIN_KEY);
+  fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    btn.disabled = false;
+    btn.textContent = 'Notificar material nuevo';
+    if (data.status === 'ok') {
+      msg.textContent = data.enviados > 0
+        ? 'Se enviaron ' + data.enviados + (data.enviados === 1 ? ' aviso.' : ' avisos.')
+        : 'Nadie tenía material nuevo para avisar.';
+      msg.className = 'msg ok';
+    } else {
+      msg.textContent = data.error || 'No se pudo revisar.';
+      msg.className = 'msg err';
+    }
+  }).catch(function () {
+    btn.disabled = false;
+    btn.textContent = 'Notificar material nuevo';
+    msg.textContent = 'No pudimos conectar. Probá de nuevo.';
+    msg.className = 'msg err';
+  });
+});
 
 var tipoSeleccionado = 'foto';
 var puntoSeleccionado = null;

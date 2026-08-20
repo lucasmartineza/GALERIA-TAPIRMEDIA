@@ -27,6 +27,9 @@ function doGet(e) {
     if (action === 'quitar_ubicacion') return handleQuitarUbicacion_(e);
     if (action === 'guardar_ruta') return handleGuardarRuta_(e);
     if (action === 'ruta') return handleRuta_(e);
+    if (action === 'eliminar_aviso') return handleEliminarAviso_(e);
+    if (action === 'guardar_email') return handleGuardarEmail_(e);
+    if (action === 'notificar_ahora') return handleNotificarAhora_(e);
     return jsonOutput_({ error: 'accion invalida' });
   } catch (err) {
     return jsonOutput_({ error: err.message });
@@ -46,17 +49,24 @@ function handleLogin_(e) {
       normalizar_(r.apellido) === apellido;
   });
 
-  if (matches.length === 0) return jsonOutput_({ status: 'no_match' });
   if (matches.length === 1) {
     return jsonOutput_({ status: 'ok', cliente: matches[0] });
   }
-  // varios matches -> pedir desambiguacion por numero de auto
-  return jsonOutput_({
-    status: 'multiple',
-    opciones: matches.map(function (m) {
-      return { folder_id: m.folder_id, numero_auto: m.numero_auto, evento: m.evento };
-    })
-  });
+  if (matches.length > 1) {
+    // varios matches -> pedir desambiguacion por numero de auto
+    return jsonOutput_({
+      status: 'multiple',
+      opciones: matches.map(function (m) {
+        return { folder_id: m.folder_id, numero_auto: m.numero_auto, evento: m.evento };
+      })
+    });
+  }
+
+  // sin match en indice -> puede ser un CM con acceso a varias carpetas
+  var cmResultado = buscarAccesosCM_(nombre, apellido, rows);
+  if (cmResultado) return jsonOutput_({ status: 'ok_cm', cm: cmResultado });
+
+  return jsonOutput_({ status: 'no_match' });
 }
 
 function normalizar_(s) {
@@ -67,8 +77,52 @@ function normalizar_(s) {
     .replace(/\s+/g, ' ');
 }
 
-function getIndiceRows_() {
+function buscarAccesosCM_(nombreNorm, apellidoNorm, filasIndice) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('cm_accesos');
+  if (!sheet) return null;
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data.shift();
+  var filas = data.map(function (row) {
+    var obj = {};
+    headers.forEach(function (h, i) { obj[h] = row[i]; });
+    return obj;
+  });
+
+  var matches = filas.filter(function (r) {
+    return normalizar_(r.nombre) === nombreNorm && normalizar_(r.apellido) === apellidoNorm;
+  });
+
+  if (matches.length === 0) return null;
+
+  var carpetas = matches.map(function (m) {
+    // buscamos el evento de esa carpeta cruzando con la hoja indice
+    var enIndice = filasIndice.filter(function (r) { return r.folder_id === m.folder_id; })[0];
+    return {
+      folder_id: m.folder_id,
+      evento: enIndice ? enIndice.evento : '',
+      etiqueta: m.etiqueta || (enIndice ? (enIndice.nombre + ' ' + enIndice.apellido) : m.folder_id)
+    };
+  });
+
+  return { nombre: matches[0].nombre, apellido: matches[0].apellido, carpetas: carpetas };
+}
+
+function getIndiceSheet_() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  // migracion: si la hoja es de antes de esta funcion, le agregamos las columnas que falten
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  ['email', 'ultimo_aviso'].forEach(function (col) {
+    if (headers.indexOf(col) === -1) {
+      sheet.getRange(1, headers.length + 1).setValue(col);
+      headers.push(col);
+    }
+  });
+  return sheet;
+}
+
+function getIndiceRows_() {
+  var sheet = getIndiceSheet_();
   var data = sheet.getDataRange().getValues();
   var headers = data.shift();
   return data.map(function (row) {
@@ -78,46 +132,141 @@ function getIndiceRows_() {
   });
 }
 
+// ---------- ACTIVAR AVISOS POR MAIL (lo hace el propio cliente) ----------
+function handleGuardarEmail_(e) {
+  var folderId = e.parameter.folder_id;
+  var email = (e.parameter.email || '').trim();
+  if (!folderId || !email) return jsonOutput_({ error: 'faltan datos' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonOutput_({ error: 'email invalido' });
+
+  var sheet = getIndiceSheet_();
+  var data = sheet.getDataRange().getValues();
+  var headers = data.shift();
+  var colFolder = headers.indexOf('folder_id');
+  var colEmail = headers.indexOf('email');
+
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][colFolder] === folderId) {
+      sheet.getRange(i + 2, colEmail + 1).setValue(email);
+      return jsonOutput_({ status: 'ok' });
+    }
+  }
+  return jsonOutput_({ error: 'carpeta no encontrada' });
+}
+
+// ---------- CHEQUEO AUTOMATICO DE MATERIAL NUEVO (correr con un trigger de tiempo) ----------
+// Configurar en Apps Script: Triggers (reloj) > Agregar activador >
+// funcion: revisarYNotificar > basado en tiempo > cada 15-30 minutos.
+function revisarYNotificar() {
+  var rows = getIndiceRows_();
+  var ahora = new Date();
+  var enviados = 0;
+
+  rows.forEach(function (r) {
+    if (!r.activo || !r.email || !r.folder_id) return;
+
+    var ultimoAviso = r.ultimo_aviso ? new Date(r.ultimo_aviso).getTime() : 0;
+    var nuevos = 0;
+
+    try {
+      var resp = Drive.Files.list({
+        q: "'" + r.folder_id + "' in parents and trashed = false",
+        fields: 'files(id,createdTime)',
+        pageSize: 1000
+      });
+      (resp.files || []).forEach(function (f) {
+        if (new Date(f.createdTime).getTime() > ultimoAviso) nuevos++;
+      });
+    } catch (err) { return; }
+
+    if (nuevos > 0) {
+      var asunto = 'Tapir Media — ' + nuevos + (nuevos === 1 ? ' foto nueva' : ' fotos nuevas') +
+                   (r.evento ? ' de ' + r.evento : '');
+      var cuerpo = 'Hola ' + r.nombre + ',\n\n' +
+                   'Se subieron ' + nuevos + (nuevos === 1 ? ' archivo nuevo' : ' archivos nuevos') +
+                   (r.evento ? ' de ' + r.evento : '') + '.\n\n' +
+                   'Entrá a tu galería: https://lucasmartineza.github.io/GALERIA-TAPIRMEDIA/\n\n' +
+                   '— Tapir Media';
+      try {
+        MailApp.sendEmail(r.email, asunto, cuerpo);
+        actualizarUltimoAviso_(r.folder_id, ahora);
+        enviados++;
+      } catch (err) {}
+    }
+  });
+
+  return enviados;
+}
+
+// Disparo manual desde admin.html (boton "Notificar material nuevo")
+function handleNotificarAhora_(e) {
+  if (e.parameter.key !== ADMIN_KEY) return jsonOutput_({ error: 'clave incorrecta' });
+  var enviados = revisarYNotificar();
+  return jsonOutput_({ status: 'ok', enviados: enviados });
+}
+
+function actualizarUltimoAviso_(folderId, fecha) {
+  var sheet = getIndiceSheet_();
+  var data = sheet.getDataRange().getValues();
+  var headers = data.shift();
+  var colFolder = headers.indexOf('folder_id');
+  var colAviso = headers.indexOf('ultimo_aviso');
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][colFolder] === folderId) {
+      sheet.getRange(i + 2, colAviso + 1).setValue(fecha);
+      return;
+    }
+  }
+}
+
 // ---------- LISTADO DE ARCHIVOS ----------
 function handleFiles_(e) {
   var folderId = e.parameter.folder;
   if (!folderId) return jsonOutput_({ error: 'falta folder' });
 
-  var folder = DriveApp.getFolderById(folderId);
-  var files = folder.getFiles();
+  // compartimos la carpeta entera de una sola vez (mucho mas rapido que
+  // archivo por archivo, y los archivos de adentro heredan el permiso)
+  try {
+    DriveApp.getFolderById(folderId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (err) {}
+
   var out = [];
+  var pageToken = null;
 
-  while (files.hasNext()) {
-    var f = files.next();
-    // aseguramos que sea visible por link (una sola vez, Drive no repite trabajo si ya esta)
-    try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (err) {}
-
-    // traemos la miniatura ya generada por Drive y la mandamos incrustada
-    // (data URI) para que el navegador no tenga que pedirla aparte a Google
-    var thumbnailUrl;
-    try {
-      var thumbBlob = f.getThumbnail();
-      if (thumbBlob) {
-        thumbnailUrl = 'data:' + thumbBlob.getContentType() + ';base64,' + Utilities.base64Encode(thumbBlob.getBytes());
-      } else {
-        thumbnailUrl = 'https://drive.google.com/thumbnail?id=' + f.getId() + '&sz=w300';
-      }
-    } catch (err) {
-      thumbnailUrl = 'https://drive.google.com/thumbnail?id=' + f.getId() + '&sz=w300';
-    }
-
-    out.push({
-      id: f.getId(),
-      nombre: f.getName(),
-      mimeType: f.getMimeType(),
-      fechaCreacion: f.getDateCreated().getTime(),
-      esVideo: f.getMimeType().indexOf('video') === 0,
-      thumbnailUrl: thumbnailUrl,
-      previewUrl: 'https://drive.google.com/thumbnail?id=' + f.getId() + '&sz=w1600',
-      viewUrl: 'https://drive.google.com/uc?export=view&id=' + f.getId(),
-      downloadUrl: 'https://drive.google.com/uc?export=download&id=' + f.getId()
+  do {
+    var resp = Drive.Files.list({
+      q: "'" + folderId + "' in parents and trashed = false",
+      fields: 'nextPageToken, files(id,name,mimeType,createdTime,thumbnailLink,size)',
+      pageSize: 1000,
+      pageToken: pageToken
     });
-  }
+
+    (resp.files || []).forEach(function (f) {
+      var thumbnailUrl, previewUrl;
+      if (f.thumbnailLink) {
+        var base = f.thumbnailLink.replace(/=s\d+$/, '');
+        thumbnailUrl = base + '=s150';
+        previewUrl = base + '=s1600';
+      } else {
+        thumbnailUrl = 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w300';
+        previewUrl = 'https://drive.google.com/thumbnail?id=' + f.id + '&sz=w1600';
+      }
+      out.push({
+        id: f.id,
+        nombre: f.name,
+        mimeType: f.mimeType,
+        fechaCreacion: new Date(f.createdTime).getTime(),
+        peso: f.size ? parseInt(f.size, 10) : 0,
+        esVideo: f.mimeType.indexOf('video') === 0,
+        thumbnailUrl: thumbnailUrl,
+        previewUrl: previewUrl,
+        viewUrl: 'https://drive.google.com/uc?export=view&id=' + f.id,
+        downloadUrl: 'https://drive.google.com/uc?export=download&id=' + f.id
+      });
+    });
+
+    pageToken = resp.nextPageToken;
+  } while (pageToken);
 
   // mas nuevo primero
   out.sort(function (a, b) { return b.fechaCreacion - a.fechaCreacion; });
@@ -130,17 +279,26 @@ function handleZip_(e) {
   var folderId = e.parameter.folder;
   if (!folderId) return jsonOutput_({ error: 'falta folder' });
 
-  var folder = DriveApp.getFolderById(folderId);
-  var files = folder.getFiles();
+  var idsParam = e.parameter.ids; // opcional: lista de ids separados por coma, para "descargar seleccionados"
   var blobs = [];
+  var nombreZip;
 
-  while (files.hasNext()) {
-    blobs.push(files.next().getBlob());
+  if (idsParam) {
+    var ids = idsParam.split(',').filter(function (s) { return s.trim(); });
+    if (ids.length === 0) return jsonOutput_({ error: 'no hay archivos' });
+    ids.forEach(function (id) {
+      try { blobs.push(DriveApp.getFileById(id.trim()).getBlob()); } catch (err) {}
+    });
+    nombreZip = 'seleccionados.zip';
+  } else {
+    var folder = DriveApp.getFolderById(folderId);
+    var files = folder.getFiles();
+    while (files.hasNext()) blobs.push(files.next().getBlob());
+    nombreZip = (folder.getName() || 'material') + '.zip';
   }
 
   if (blobs.length === 0) return jsonOutput_({ error: 'no hay archivos' });
 
-  var nombreZip = (folder.getName() || 'material') + '.zip';
   var zipBlob = Utilities.zip(blobs, nombreZip);
   return zipBlob; // Apps Script dispara la descarga directo con el content-type correcto
 }
@@ -154,18 +312,30 @@ function handleAvisos_(e) {
 
   var data = sheet.getDataRange().getValues();
   var headers = data.shift();
-  var avisos = data
-    .map(function (row) {
-      var obj = {};
-      headers.forEach(function (h, i) { obj[h] = row[i]; });
-      return obj;
-    })
-    .filter(function (a) { return a.activo; })
-    .map(function (a) {
-      return { mensaje: a.mensaje, fecha: a.fecha ? String(a.fecha) : '' };
-    });
+  var avisos = [];
+  data.forEach(function (row, i) {
+    var obj = {};
+    headers.forEach(function (h, j) { obj[h] = row[j]; });
+    if (obj.activo) {
+      var fechaTexto = obj.fecha instanceof Date
+        ? Utilities.formatDate(obj.fecha, Session.getScriptTimeZone(), 'dd/MM HH:mm')
+        : String(obj.fecha || '');
+      avisos.push({ fila: i + 2, mensaje: obj.mensaje, fecha: fechaTexto });
+    }
+  });
 
   return jsonOutput_({ status: 'ok', avisos: avisos });
+}
+
+function handleEliminarAviso_(e) {
+  if (e.parameter.key !== ADMIN_KEY) return jsonOutput_({ error: 'clave incorrecta' });
+
+  var fila = parseInt(e.parameter.fila, 10);
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('avisos');
+  if (!sheet || !fila) return jsonOutput_({ error: 'no encontrado' });
+
+  sheet.getRange(fila, 3).setValue(false); // columna "activo"
+  return jsonOutput_({ status: 'ok' });
 }
 
 // ---------- PUBLICAR AVISO NUEVO (desde admin.html) ----------
@@ -195,7 +365,13 @@ function getOrCrearHojaUbicaciones_() {
   var sheet = ss.getSheetByName('ubicaciones');
   if (!sheet) {
     sheet = ss.insertSheet('ubicaciones');
-    sheet.appendRow(['id', 'lat', 'lng', 'tipo', 'evento', 'activo', 'fecha']);
+    sheet.appendRow(['id', 'lat', 'lng', 'tipo', 'evento', 'activo', 'fecha', 'descripcion']);
+    return sheet;
+  }
+  // migracion: si la hoja ya existia sin la columna "descripcion", se la agregamos
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf('descripcion') === -1) {
+    sheet.getRange(1, headers.length + 1).setValue('descripcion');
   }
   return sheet;
 }
@@ -203,6 +379,7 @@ function getOrCrearHojaUbicaciones_() {
 function handleUbicaciones_(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('ubicaciones');
   if (!sheet) return jsonOutput_({ status: 'ok', ubicaciones: [] });
+  getOrCrearHojaUbicaciones_(); // asegura que la columna "descripcion" exista
 
   var evento = (e.parameter.evento || '').trim().toLowerCase();
   var data = sheet.getDataRange().getValues();
@@ -219,9 +396,13 @@ function handleUbicaciones_(e) {
       return true;
     })
     .map(function (u) {
+      var fechaTexto = u.fecha instanceof Date
+        ? Utilities.formatDate(u.fecha, Session.getScriptTimeZone(), 'dd/MM HH:mm')
+        : String(u.fecha || '');
       return {
         id: u.id, lat: u.lat, lng: u.lng, tipo: u.tipo,
-        evento: u.evento, fecha: u.fecha, timestamp: u.id
+        evento: u.evento, fecha: fechaTexto, timestamp: u.id,
+        descripcion: u.descripcion || ''
       };
     });
 
@@ -233,15 +414,17 @@ function handleNuevaUbicacion_(e) {
 
   var lat = parseFloat(e.parameter.lat);
   var lng = parseFloat(e.parameter.lng);
-  var tipo = e.parameter.tipo === 'video' ? 'video' : 'foto';
+  var tipo = e.parameter.tipo;
+  if (['foto', 'video', 'ambos'].indexOf(tipo) === -1) tipo = 'foto';
   var evento = (e.parameter.evento || '').trim();
+  var descripcion = (e.parameter.descripcion || '').trim();
 
   if (isNaN(lat) || isNaN(lng) || !evento) return jsonOutput_({ error: 'faltan datos' });
 
   var sheet = getOrCrearHojaUbicaciones_();
   var id = Date.now();
   var fecha = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM HH:mm');
-  sheet.appendRow([id, lat, lng, tipo, evento, true, fecha]);
+  sheet.appendRow([id, lat, lng, tipo, evento, true, fecha, descripcion]);
 
   return jsonOutput_({ status: 'ok', id: id });
 }
