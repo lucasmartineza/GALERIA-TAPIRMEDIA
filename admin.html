@@ -29,7 +29,7 @@
                margin-bottom:20px; box-shadow:0 0 12px rgba(0,229,255,.2); }
   .evento-box label{ color:#00e5ff; font-weight:600; margin-bottom:8px; }
   .evento-box input{ margin-bottom:0; }
-  .btn-notificar{ background:#e2a83a; box-shadow:0 0 14px rgba(226,168,58,.35); font-size:15px; padding:16px; }
+  .btn-notificar{ background:#39ff6a; color:#04270f; box-shadow:0 0 18px rgba(57,255,106,.55); font-size:15px; padding:16px; }
   @keyframes spin{ to{ transform:rotate(360deg); } }
   .spinner{ display:inline-block; width:14px; height:14px; border:2px solid rgba(0,0,0,.25);
             border-top-color:#062a2e; border-radius:50%; animation:spin .7s linear infinite; }
@@ -159,10 +159,16 @@ document.getElementById('btnNotificarAhora').addEventListener('click', function 
     btn.disabled = false;
     btn.textContent = 'Notificar material nuevo';
     if (data.status === 'ok') {
-      msg.textContent = data.enviados > 0
+      var texto = data.enviados > 0
         ? 'Se enviaron ' + data.enviados + (data.enviados === 1 ? ' aviso.' : ' avisos.')
         : 'Nadie tenía material nuevo para avisar.';
-      msg.className = 'msg ok';
+      if (data.errores && data.errores.length > 0) {
+        texto += ' Errores: ' + data.errores.join(' | ');
+        msg.className = 'msg err';
+      } else {
+        msg.className = 'msg ok';
+      }
+      msg.textContent = texto;
     } else {
       msg.textContent = data.error || 'No se pudo revisar.';
       msg.className = 'msg err';
